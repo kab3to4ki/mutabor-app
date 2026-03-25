@@ -27,11 +27,28 @@ function App() {
   const mediaRecorderRef = useRef(null)
   const audioChunksRef = useRef([])
   const audioPlayRef = useRef(null)
+  const streamRef = useRef(null)
+
+  // Запрашиваем разрешение на микрофон один раз при загрузке
+  useEffect(() => {
+    navigator.mediaDevices.getUserMedia({ audio: true })
+      .then(stream => { streamRef.current = stream })
+      .catch(() => setError('Нет доступа к микрофону. Проверьте разрешения в браузере.'))
+    return () => {
+      if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop())
+    }
+  }, [])
 
   const startRecording = useCallback(async () => {
     try {
       setError('')
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      // Переиспользуем существующий стрим, не спрашиваем разрешение повторно
+      let stream = streamRef.current
+      if (!stream || stream.getTracks().every(t => t.readyState === 'ended')) {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+        streamRef.current = stream
+      }
+
       const mediaRecorder = new MediaRecorder(stream)
       audioChunksRef.current = []
 
@@ -39,9 +56,8 @@ function App() {
         audioChunksRef.current.push(event.data)
       }
 
-      mediaRecorder.onstop = () => {
-        stream.getTracks().forEach(track => track.stop())
-      }
+      // НЕ останавливаем стрим — он живёт всё время работы приложения
+      mediaRecorder.onstop = () => {}
 
       mediaRecorderRef.current = mediaRecorder
       mediaRecorder.start()
