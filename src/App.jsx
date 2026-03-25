@@ -11,10 +11,10 @@ const ANIMALS = {
   bear: { emoji: '🐻', name: 'Медведь', voice: 'onyx', personality: 'сильный и величественный медведь' }
 }
 
+const API_KEY = import.meta.env.VITE_OPENAI_API_KEY
+
 function App() {
   const [mode, setMode] = useState('animal-to-human') // 'animal-to-human' or 'human-to-animal'
-  const [apiKey, setApiKey] = useState('')
-  const [showSettings, setShowSettings] = useState(false)
   const [selectedAnimal, setSelectedAnimal] = useState('dog')
   const [isRecording, setIsRecording] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
@@ -64,10 +64,6 @@ function App() {
   }, [])
 
   const processAudio = useCallback(async (audioBlob) => {
-    if (!apiKey) {
-      setError('Пожалуйста, введите API ключ в настройках')
-      return
-    }
 
     setIsLoading(true)
     setTranscription('')
@@ -84,7 +80,7 @@ function App() {
       const transcribeResponse = await fetch('https://api.openai.com/v1/audio/transcriptions', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${apiKey}`
+          'Authorization': `Bearer ${API_KEY}`
         },
         body: formData
       })
@@ -117,7 +113,7 @@ function App() {
       const gptResponse = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${apiKey}`,
+          'Authorization': `Bearer ${API_KEY}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
@@ -150,16 +146,15 @@ function App() {
     } finally {
       setIsLoading(false)
     }
-  }, [apiKey, mode, selectedAnimal, animalForTranscription])
+  }, [mode, selectedAnimal, animalForTranscription])
 
   const generateSpeech = useCallback(async (text) => {
-    if (!apiKey) return
 
     try {
       const ttsResponse = await fetch('https://api.openai.com/v1/audio/speech', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${apiKey}`,
+          'Authorization': `Bearer ${API_KEY}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
@@ -179,7 +174,7 @@ function App() {
     } catch (err) {
       setError(err.message || 'Ошибка при создании аудио')
     }
-  }, [apiKey, selectedAnimal])
+  }, [selectedAnimal])
 
   const playAudio = useCallback(() => {
     if (audioPlayRef.current) {
@@ -207,36 +202,6 @@ function App() {
           </p>
         </div>
 
-        {/* Settings Button */}
-        <div className="absolute top-6 right-6">
-          <button
-            onClick={() => setShowSettings(!showSettings)}
-            className="p-3 rounded-full bg-slate-700/50 hover:bg-slate-700 border border-slate-600/50 transition-all"
-            title="Настройки"
-          >
-            ⚙️
-          </button>
-        </div>
-
-        {/* Settings Panel */}
-        {showSettings && (
-          <div className="bg-slate-800/80 backdrop-blur-sm border border-emerald-500/30 rounded-xl p-6 mb-8 animate-in fade-in-50">
-            <h2 className="text-lg font-semibold mb-4">Настройки</h2>
-            <div>
-              <label className="block text-sm text-slate-300 mb-2">OpenAI API Ключ</label>
-              <input
-                type="password"
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-                placeholder="sk-..."
-                className="w-full bg-slate-700/50 border border-slate-600 rounded-lg px-4 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-emerald-400 transition-colors"
-              />
-              <p className="text-xs text-slate-400 mt-2">
-                Ключ хранится только в памяти браузера и не сохраняется.
-              </p>
-            </div>
-          </div>
-        )}
 
         {/* Mode Selection */}
         <div className="flex gap-4 mb-8 justify-center">
@@ -416,7 +381,6 @@ function App() {
         {/* Footer */}
         <div className="text-center text-slate-500 text-xs mt-12 pb-6">
           <p>Мутабор © 2026 • Animal Voice Translator</p>
-          <p className="mt-1">Требуется API ключ OpenAI для работы</p>
         </div>
       </div>
     </div>
