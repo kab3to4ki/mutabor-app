@@ -1,14 +1,14 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react'
 
 const ANIMALS = {
-  dog: { emoji: '🐕', name: 'Собака', voice: 'fable', personality: 'верный и энергичный пёс' },
-  cat: { emoji: '🐱', name: 'Кошка', voice: 'nova', personality: 'независимая и хитрая кошка' },
-  bird: { emoji: '🐦', name: 'Птица', voice: 'shimmer', personality: 'поющая и весёлая птица' },
-  cow: { emoji: '🐄', name: 'Корова', voice: 'onyx', personality: 'спокойная и философская корова' },
-  frog: { emoji: '🐸', name: 'Лягушка', voice: 'alloy', personality: 'громкая и задумчивая лягушка' },
-  wolf: { emoji: '🐺', name: 'Волк', voice: 'echo', personality: 'дикий и мудрый волк' },
-  dolphin: { emoji: '🐬', name: 'Дельфин', voice: 'nova', personality: 'игривый и умный дельфин' },
-  bear: { emoji: '🐻', name: 'Медведь', voice: 'onyx', personality: 'сильный и величественный медведь' }
+  dog:     { emoji: '🐕', name: 'Собака',  voice: 'fable',   sounds: 'ГАВ! ВУФ ВУФ! АРФ!',         pitch: 1.8 },
+  cat:     { emoji: '🐱', name: 'Кошка',   voice: 'nova',    sounds: 'МЯУ! МРРРР... МЯУ МЯУ!',     pitch: 1.5 },
+  bird:    { emoji: '🐦', name: 'Птица',   voice: 'shimmer', sounds: 'ЧИРИК! ЧИВ ЧИВ! ТИРЛИР!',    pitch: 2.4 },
+  cow:     { emoji: '🐄', name: 'Корова',  voice: 'onyx',    sounds: 'МУ-У-У! МУ! МООО!',           pitch: 0.65 },
+  frog:    { emoji: '🐸', name: 'Лягушка', voice: 'alloy',   sounds: 'КВА! КВА КВА! КВАААА!',       pitch: 0.9 },
+  wolf:    { emoji: '🐺', name: 'Волк',    voice: 'echo',    sounds: 'У-У-У-У! ВЫЙ! АРРР У-У!',    pitch: 0.75 },
+  dolphin: { emoji: '🐬', name: 'Дельфин', voice: 'shimmer', sounds: 'ЭЭЭ! ЕЕЕЕЕ! ИИИ ЭЭЭ ИИИ!',  pitch: 2.2 },
+  bear:    { emoji: '🐻', name: 'Медведь', voice: 'onyx',    sounds: 'РРРР! ГРРР! УРРР РРРР!',      pitch: 0.55 },
 }
 
 const API_KEY = import.meta.env.VITE_OPENAI_API_KEY
@@ -103,11 +103,12 @@ function App() {
       let systemPrompt, userMessage
 
       if (mode === 'animal-to-human') {
-        systemPrompt = `Ты эксперт по переводу языка животных. Записали звуки животного ${animalName}. Транскрипция (может быть нечёткой или пустой): '${transcribedText}'. Творчески и с юмором интерпретируй, что пытается сказать это животное. Пиши на русском. Будь конкретным и смешным, как будто ты действительно понимаешь животных. 2-3 предложения.`
-        userMessage = `Переведи звуки ${animalName}`
+        systemPrompt = `Ты переводчик языка животных. Тебе дали запись звуков животного "${animalName}". Дай ОЧЕНЬ КОРОТКИЙ перевод — максимум 3-6 слов, без предисловий. Только суть того, что животное хотело сказать. Например: "Дай поесть!", "Уйди от меня!", "Играй со мной!", "Чужой! Атас!". Смешно, метко, по делу.`
+        userMessage = transcribedText || `[звуки ${animalName}]`
       } else {
-        systemPrompt = `Ты переводчик с человеческого языка на язык ${animalName}. Человек сказал: '${transcribedText}'. Переведи это так, как ${personality} выразил бы эту мысль. Используй звуки животного вперемешку с ломаными человекоподобными словами. Будь креативным и забавным. Коротко (1-2 предложения). На русском.`
-        userMessage = `Переведи на язык ${animalName}`
+        const animalSounds = ANIMALS[selectedAnimal].sounds
+        systemPrompt = `Ты переводчик на язык животного "${animalName}". Переведи слова человека в ЗВУКИ этого животного — только звукоподражания, никаких слов. Используй звуки вроде: ${animalSounds}. Дай 2-4 звука в зависимости от интонации и смысла. Только звуки, ничего лишнего.`
+        userMessage = transcribedText || '[человек что-то сказал]'
       }
 
       const gptResponse = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -148,8 +149,79 @@ function App() {
     }
   }, [mode, selectedAnimal, animalForTranscription])
 
-  const generateSpeech = useCallback(async (text) => {
+  const pitchShiftAndPlay = useCallback(async (audioBlob, pitchFactor) => {
+    try {
+      const arrayBuffer = await audioBlob.arrayBuffer()
+      const audioCtx = new (window.AudioContext || window.webkitAudioContext)()
+      const originalBuffer = await audioCtx.decodeAudioData(arrayBuffer)
 
+      // Render at shifted pitch via playbackRate
+      const offlineCtx = new OfflineAudioContext(
+        originalBuffer.numberOfChannels,
+        Math.ceil(originalBuffer.length / pitchFactor),
+        originalBuffer.sampleRate
+      )
+      const source = offlineCtx.createBufferSource()
+      source.buffer = originalBuffer
+      source.playbackRate.value = pitchFactor
+      source.connect(offlineCtx.destination)
+      source.start(0)
+
+      const shifted = await offlineCtx.startRendering()
+
+      // Play directly via AudioContext
+      const playCtx = new (window.AudioContext || window.webkitAudioContext)()
+      const playSource = playCtx.createBufferSource()
+      playSource.buffer = shifted
+      playSource.connect(playCtx.destination)
+      playSource.start(0)
+
+      // Also store URL for replay button
+      const wav = bufferToWave(shifted, shifted.length)
+      const url = URL.createObjectURL(new Blob([wav], { type: 'audio/wav' }))
+      setAudioUrl(url)
+    } catch (err) {
+      // Fallback: play original without pitch shift
+      const url = URL.createObjectURL(audioBlob)
+      setAudioUrl(url)
+      if (audioPlayRef.current) {
+        audioPlayRef.current.src = url
+        audioPlayRef.current.play()
+      }
+    }
+  }, [])
+
+  // Convert AudioBuffer to WAV ArrayBuffer
+  const bufferToWave = (abuffer, len) => {
+    const numOfChan = abuffer.numberOfChannels
+    const length = len * numOfChan * 2 + 44
+    const buffer = new ArrayBuffer(length)
+    const view = new DataView(buffer)
+    const channels = []
+    let i, sample, offset = 0, pos = 0
+
+    const setUint16 = (data) => { view.setUint16(pos, data, true); pos += 2 }
+    const setUint32 = (data) => { view.setUint32(pos, data, true); pos += 4 }
+
+    setUint32(0x46464952); setUint32(length - 8); setUint32(0x45564157)
+    setUint32(0x20746d66); setUint32(16); setUint16(1); setUint16(numOfChan)
+    setUint32(abuffer.sampleRate); setUint32(abuffer.sampleRate * 2 * numOfChan)
+    setUint16(numOfChan * 2); setUint16(16)
+    setUint32(0x61746164); setUint32(length - pos - 4)
+
+    for (i = 0; i < abuffer.numberOfChannels; i++) channels.push(abuffer.getChannelData(i))
+    while (pos < length) {
+      for (i = 0; i < numOfChan; i++) {
+        sample = Math.max(-1, Math.min(1, channels[i][offset]))
+        view.setInt16(pos, sample < 0 ? sample * 0x8000 : sample * 0x7FFF, true)
+        pos += 2
+      }
+      offset++
+    }
+    return buffer
+  }
+
+  const generateSpeech = useCallback(async (text) => {
     try {
       const ttsResponse = await fetch('https://api.openai.com/v1/audio/speech', {
         method: 'POST',
@@ -160,21 +232,19 @@ function App() {
         body: JSON.stringify({
           model: 'tts-1',
           input: text,
-          voice: ANIMALS[selectedAnimal].voice
+          voice: ANIMALS[selectedAnimal].voice,
+          speed: 1.0
         })
       })
 
-      if (!ttsResponse.ok) {
-        throw new Error('Ошибка при создании аудио')
-      }
+      if (!ttsResponse.ok) throw new Error('Ошибка при создании аудио')
 
       const audioBlob = await ttsResponse.blob()
-      const url = URL.createObjectURL(audioBlob)
-      setAudioUrl(url)
+      await pitchShiftAndPlay(audioBlob, ANIMALS[selectedAnimal].pitch)
     } catch (err) {
       setError(err.message || 'Ошибка при создании аудио')
     }
-  }, [selectedAnimal])
+  }, [selectedAnimal, pitchShiftAndPlay])
 
   const playAudio = useCallback(() => {
     if (audioPlayRef.current) {
@@ -343,16 +413,6 @@ function App() {
         {/* Results */}
         {(transcription || translation) && (
           <div className="space-y-6 mb-8">
-            {/* Transcription */}
-            {transcription && (
-              <div className="bg-gradient-to-br from-slate-800/50 to-slate-700/30 backdrop-blur-sm border border-slate-600/50 rounded-lg p-6">
-                <h3 className="text-sm font-semibold text-slate-300 mb-2 uppercase tracking-wider">
-                  📝 Транскрипция
-                </h3>
-                <p className="text-white text-lg">{transcription}</p>
-              </div>
-            )}
-
             {/* Translation */}
             {translation && (
               <div className="bg-gradient-to-br from-emerald-500/20 to-teal-500/10 backdrop-blur-sm border border-emerald-500/30 rounded-lg p-6 shadow-lg shadow-emerald-500/20">
