@@ -51,6 +51,8 @@ function App() {
     }
   }, [])
 
+  const processAudioRef = useRef(null)
+
   const stopRecording = useCallback(async () => {
     if (!mediaRecorderRef.current) return
 
@@ -59,7 +61,7 @@ function App() {
 
     setTimeout(() => {
       const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' })
-      processAudio(audioBlob)
+      if (processAudioRef.current) processAudioRef.current(audioBlob)
     }, 100)
   }, [])
 
@@ -149,77 +151,10 @@ function App() {
     }
   }, [mode, selectedAnimal, animalForTranscription])
 
-  const pitchShiftAndPlay = useCallback(async (audioBlob, pitchFactor) => {
-    try {
-      const arrayBuffer = await audioBlob.arrayBuffer()
-      const audioCtx = new (window.AudioContext || window.webkitAudioContext)()
-      const originalBuffer = await audioCtx.decodeAudioData(arrayBuffer)
-
-      // Render at shifted pitch via playbackRate
-      const offlineCtx = new OfflineAudioContext(
-        originalBuffer.numberOfChannels,
-        Math.ceil(originalBuffer.length / pitchFactor),
-        originalBuffer.sampleRate
-      )
-      const source = offlineCtx.createBufferSource()
-      source.buffer = originalBuffer
-      source.playbackRate.value = pitchFactor
-      source.connect(offlineCtx.destination)
-      source.start(0)
-
-      const shifted = await offlineCtx.startRendering()
-
-      // Play directly via AudioContext
-      const playCtx = new (window.AudioContext || window.webkitAudioContext)()
-      const playSource = playCtx.createBufferSource()
-      playSource.buffer = shifted
-      playSource.connect(playCtx.destination)
-      playSource.start(0)
-
-      // Also store URL for replay button
-      const wav = bufferToWave(shifted, shifted.length)
-      const url = URL.createObjectURL(new Blob([wav], { type: 'audio/wav' }))
-      setAudioUrl(url)
-    } catch (err) {
-      // Fallback: play original without pitch shift
-      const url = URL.createObjectURL(audioBlob)
-      setAudioUrl(url)
-      if (audioPlayRef.current) {
-        audioPlayRef.current.src = url
-        audioPlayRef.current.play()
-      }
-    }
-  }, [])
-
-  // Convert AudioBuffer to WAV ArrayBuffer
-  const bufferToWave = (abuffer, len) => {
-    const numOfChan = abuffer.numberOfChannels
-    const length = len * numOfChan * 2 + 44
-    const buffer = new ArrayBuffer(length)
-    const view = new DataView(buffer)
-    const channels = []
-    let i, sample, offset = 0, pos = 0
-
-    const setUint16 = (data) => { view.setUint16(pos, data, true); pos += 2 }
-    const setUint32 = (data) => { view.setUint32(pos, data, true); pos += 4 }
-
-    setUint32(0x46464952); setUint32(length - 8); setUint32(0x45564157)
-    setUint32(0x20746d66); setUint32(16); setUint16(1); setUint16(numOfChan)
-    setUint32(abuffer.sampleRate); setUint32(abuffer.sampleRate * 2 * numOfChan)
-    setUint16(numOfChan * 2); setUint16(16)
-    setUint32(0x61746164); setUint32(length - pos - 4)
-
-    for (i = 0; i < abuffer.numberOfChannels; i++) channels.push(abuffer.getChannelData(i))
-    while (pos < length) {
-      for (i = 0; i < numOfChan; i++) {
-        sample = Math.max(-1, Math.min(1, channels[i][offset]))
-        view.setInt16(pos, sample < 0 ? sample * 0x8000 : sample * 0x7FFF, true)
-        pos += 2
-      }
-      offset++
-    }
-    return buffer
-  }
+  // Keep ref updated so stopRecording always calls the latest version
+  useEffect(() => {
+    processAudioRef.current = processAudio
+  }, [processAudio])
 
   const generateSpeech = useCallback(async (text) => {
     try {
@@ -240,17 +175,25 @@ function App() {
       if (!ttsResponse.ok) throw new Error('Ошибка при создании аудио')
 
       const audioBlob = await ttsResponse.blob()
-      await pitchShiftAndPlay(audioBlob, ANIMALS[selectedAnimal].pitch)
+      const url = URL.createObjectURL(audioBlob)
+      setAudioUrl(url)
+
+      // Auto-play with pitch shift via playbackRate (chipmunk/bear effect)
+      const audio = new Audio(url)
+      audio.playbackRate = ANIMALS[selectedAnimal].pitch
+      await audio.play()
     } catch (err) {
       setError(err.message || 'Ошибка при создании аудио')
     }
-  }, [selectedAnimal, pitchShiftAndPlay])
+  }, [selectedAnimal])
 
   const playAudio = useCallback(() => {
-    if (audioPlayRef.current) {
-      audioPlayRef.current.play()
+    if (audioUrl) {
+      const audio = new Audio(audioUrl)
+      audio.playbackRate = ANIMALS[selectedAnimal].pitch
+      audio.play()
     }
-  }, [])
+  }, [audioUrl, selectedAnimal])
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white overflow-auto">
