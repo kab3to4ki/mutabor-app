@@ -1,14 +1,14 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react'
 
 const ANIMALS = {
-  dog:     { emoji: '🐕', name: 'Собака',  voice: 'fable',   sounds: 'ГАВ! ВУФ ВУФ! АРФ!',         pitch: 1.8 },
-  cat:     { emoji: '🐱', name: 'Кошка',   voice: 'nova',    sounds: 'МЯУ! МРРРР... МЯУ МЯУ!',     pitch: 1.5 },
-  bird:    { emoji: '🐦', name: 'Птица',   voice: 'shimmer', sounds: 'ЧИРИК! ЧИВ ЧИВ! ТИРЛИР!',    pitch: 2.4 },
-  cow:     { emoji: '🐄', name: 'Корова',  voice: 'onyx',    sounds: 'МУ-У-У! МУ! МООО!',           pitch: 0.65 },
-  frog:    { emoji: '🐸', name: 'Лягушка', voice: 'alloy',   sounds: 'КВА! КВА КВА! КВАААА!',       pitch: 0.9 },
-  wolf:    { emoji: '🐺', name: 'Волк',    voice: 'echo',    sounds: 'У-У-У-У! ВЫЙ! АРРР У-У!',    pitch: 0.75 },
-  dolphin: { emoji: '🐬', name: 'Дельфин', voice: 'shimmer', sounds: 'ЭЭЭ! ЕЕЕЕЕ! ИИИ ЭЭЭ ИИИ!',  pitch: 2.2 },
-  bear:    { emoji: '🐻', name: 'Медведь', voice: 'onyx',    sounds: 'РРРР! ГРРР! УРРР РРРР!',      pitch: 0.55 },
+  dog:     { emoji: '🐕', name: 'Собака',  voice: 'fable',   sounds: 'ГАВ! ВУФ ВУФ! АРФ!',         pitch: 1.4 },
+  cat:     { emoji: '🐱', name: 'Кошка',   voice: 'nova',    sounds: 'МЯУ! МРРРР... МЯУ МЯУ!',     pitch: 1.3 },
+  bird:    { emoji: '🐦', name: 'Птица',   voice: 'shimmer', sounds: 'ЧИРИК! ЧИВ ЧИВ! ТИРЛИР!',    pitch: 1.6 },
+  cow:     { emoji: '🐄', name: 'Корова',  voice: 'onyx',    sounds: 'МУ-У-У! МУ! МООО!',           pitch: 0.75 },
+  frog:    { emoji: '🐸', name: 'Лягушка', voice: 'alloy',   sounds: 'КВА! КВА КВА! КВАААА!',       pitch: 0.95 },
+  wolf:    { emoji: '🐺', name: 'Волк',    voice: 'echo',    sounds: 'У-У-У-У! ВЫЙ! АРРР У-У!',    pitch: 0.8 },
+  dolphin: { emoji: '🐬', name: 'Дельфин', voice: 'shimmer', sounds: 'ЭЭЭ! ЕЕЕЕЕ! ИИИ ЭЭЭ ИИИ!',  pitch: 1.5 },
+  bear:    { emoji: '🐻', name: 'Медведь', voice: 'onyx',    sounds: 'РРРР! ГРРР! УРРР РРРР!',      pitch: 0.65 },
 }
 
 const API_KEY = import.meta.env.VITE_OPENAI_API_KEY
@@ -109,7 +109,7 @@ function App() {
         userMessage = transcribedText || `[звуки ${animalName}]`
       } else {
         const animalSounds = ANIMALS[selectedAnimal].sounds
-        systemPrompt = `Ты переводчик на язык животного "${animalName}". Переведи слова человека в ЗВУКИ этого животного — только звукоподражания, никаких слов. Используй звуки вроде: ${animalSounds}. Дай 2-4 звука в зависимости от интонации и смысла. Только звуки, ничего лишнего.`
+        systemPrompt = `Ты переводчик на язык животного "${animalName}". Переведи слова человека в ЗВУКИ этого животного — только звукоподражания, никаких слов. Используй звуки вроде: ${animalSounds}. Генерируй достаточно звуков чтобы передать смысл и эмоцию — минимум 8-12 звуковых токенов, растяни на полноценную фразу. Только звуки, ничего лишнего.`
         userMessage = transcribedText || '[человек что-то сказал]'
       }
 
@@ -139,9 +139,11 @@ function App() {
 
       setTranslation(translatedText)
 
-      // For human-to-animal mode, generate speech
+      // Generate speech for both modes
       if (mode === 'human-to-animal') {
-        generateSpeech(translatedText)
+        generateAnimalSpeech(translatedText)
+      } else {
+        generateHumanSpeech(translatedText)
       }
     } catch (err) {
       setError(err.message || 'Ошибка при обработке аудио')
@@ -156,30 +158,39 @@ function App() {
     processAudioRef.current = processAudio
   }, [processAudio])
 
-  const generateSpeech = useCallback(async (text) => {
+  // Human voice reads back animal translation
+  const generateHumanSpeech = useCallback(async (text) => {
     try {
-      const ttsResponse = await fetch('https://api.openai.com/v1/audio/speech', {
+      const res = await fetch('https://api.openai.com/v1/audio/speech', {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${API_KEY}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          model: 'tts-1',
-          input: text,
-          voice: ANIMALS[selectedAnimal].voice,
-          speed: 1.0
-        })
+        headers: { 'Authorization': `Bearer ${API_KEY}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: 'tts-1', input: text, voice: 'alloy', speed: 1.0 })
       })
-
-      if (!ttsResponse.ok) throw new Error('Ошибка при создании аудио')
-
-      const audioBlob = await ttsResponse.blob()
-      const url = URL.createObjectURL(audioBlob)
+      if (!res.ok) throw new Error('Ошибка озвучки')
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
       setAudioUrl(url)
-
-      // Auto-play with pitch shift via playbackRate (chipmunk/bear effect)
       const audio = new Audio(url)
+      await audio.play()
+    } catch (err) {
+      setError(err.message || 'Ошибка при озвучке перевода')
+    }
+  }, [])
+
+  // Animal voice: TTS + pitch shift (playbackRate changes speed+pitch together)
+  const generateAnimalSpeech = useCallback(async (text) => {
+    try {
+      const res = await fetch('https://api.openai.com/v1/audio/speech', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${API_KEY}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: 'tts-1', input: text, voice: ANIMALS[selectedAnimal].voice, speed: 1.0 })
+      })
+      if (!res.ok) throw new Error('Ошибка при создании аудио')
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      setAudioUrl(url)
+      const audio = new Audio(url)
+      // pitch: dog=1.4 (faster/higher), bear=0.65 (slower/lower) — moderate shift keeps length ok
       audio.playbackRate = ANIMALS[selectedAnimal].pitch
       await audio.play()
     } catch (err) {
@@ -188,12 +199,13 @@ function App() {
   }, [selectedAnimal])
 
   const playAudio = useCallback(() => {
-    if (audioUrl) {
-      const audio = new Audio(audioUrl)
+    if (!audioUrl) return
+    const audio = new Audio(audioUrl)
+    if (mode === 'human-to-animal') {
       audio.playbackRate = ANIMALS[selectedAnimal].pitch
-      audio.play()
     }
-  }, [audioUrl, selectedAnimal])
+    audio.play()
+  }, [audioUrl, selectedAnimal, mode])
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white overflow-auto">
@@ -364,13 +376,13 @@ function App() {
                 </h3>
                 <p className="text-white text-lg leading-relaxed">{translation}</p>
 
-                {/* Play Button (Human → Animal) */}
-                {mode === 'human-to-animal' && audioUrl && (
+                {/* Replay button — both modes */}
+                {audioUrl && (
                   <button
                     onClick={playAudio}
                     className="mt-4 px-6 py-2 bg-gradient-to-r from-cyan-500 to-teal-500 hover:from-cyan-600 hover:to-teal-600 rounded-lg font-semibold transition-all transform hover:scale-105 shadow-lg shadow-cyan-500/30"
                   >
-                    🔊 Слушать голос {ANIMALS[selectedAnimal].name}
+                    🔊 {mode === 'human-to-animal' ? `Голос ${ANIMALS[selectedAnimal].name}` : 'Слушать перевод'}
                   </button>
                 )}
               </div>
