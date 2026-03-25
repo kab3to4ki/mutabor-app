@@ -139,9 +139,9 @@ function App() {
 
       setTranslation(translatedText)
 
-      // Generate speech for both modes
+      // Generate speech for both modes — pass current animal key explicitly
       if (mode === 'human-to-animal') {
-        generateAnimalSpeech(translatedText)
+        generateAnimalSpeech(translatedText, selectedAnimal)
       } else {
         generateHumanSpeech(translatedText)
       }
@@ -177,35 +177,35 @@ function App() {
     }
   }, [])
 
-  // Animal voice: TTS + pitch shift (playbackRate changes speed+pitch together)
-  const generateAnimalSpeech = useCallback(async (text) => {
+  // Animal voice: TTS + pitch shift — animalKey passed explicitly to avoid stale closure
+  const generateAnimalSpeech = useCallback(async (text, animalKey) => {
     try {
+      const animal = ANIMALS[animalKey]
       const res = await fetch('https://api.openai.com/v1/audio/speech', {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${API_KEY}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: 'tts-1', input: text, voice: ANIMALS[selectedAnimal].voice, speed: 1.0 })
+        body: JSON.stringify({ model: 'tts-1', input: text, voice: animal.voice, speed: 1.0 })
       })
       if (!res.ok) throw new Error('Ошибка при создании аудио')
       const blob = await res.blob()
       const url = URL.createObjectURL(blob)
       setAudioUrl(url)
       const audio = new Audio(url)
-      // pitch: dog=1.4 (faster/higher), bear=0.65 (slower/lower) — moderate shift keeps length ok
-      audio.playbackRate = ANIMALS[selectedAnimal].pitch
+      audio.playbackRate = animal.pitch
       await audio.play()
     } catch (err) {
       setError(err.message || 'Ошибка при создании аудио')
     }
-  }, [selectedAnimal])
+  }, [])
 
-  const playAudio = useCallback(() => {
-    if (!audioUrl) return
-    const audio = new Audio(audioUrl)
-    if (mode === 'human-to-animal') {
-      audio.playbackRate = ANIMALS[selectedAnimal].pitch
+  const playAudio = useCallback((currentAnimalKey, currentMode, currentUrl) => {
+    if (!currentUrl) return
+    const audio = new Audio(currentUrl)
+    if (currentMode === 'human-to-animal') {
+      audio.playbackRate = ANIMALS[currentAnimalKey].pitch
     }
     audio.play()
-  }, [audioUrl, selectedAnimal, mode])
+  }, [])
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white overflow-auto">
@@ -379,7 +379,7 @@ function App() {
                 {/* Replay button — both modes */}
                 {audioUrl && (
                   <button
-                    onClick={playAudio}
+                    onClick={() => playAudio(selectedAnimal, mode, audioUrl)}
                     className="mt-4 px-6 py-2 bg-gradient-to-r from-cyan-500 to-teal-500 hover:from-cyan-600 hover:to-teal-600 rounded-lg font-semibold transition-all transform hover:scale-105 shadow-lg shadow-cyan-500/30"
                   >
                     🔊 {mode === 'human-to-animal' ? `Голос ${ANIMALS[selectedAnimal].name}` : 'Слушать перевод'}
